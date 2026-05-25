@@ -97,6 +97,7 @@ class WorkerVerificationSubmit(BaseModel):
     selfie: str
 
 # Business Verification Models
+# Business Verification Models
 class BusinessVerification(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -138,6 +139,58 @@ class BecomeWorkerRequest(BaseModel):
     hourly_rate: float
     service_radius: float
     profile_image: Optional[str] = None
+
+
+# Job Models
+class Job(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    title: str
+    description: str
+    category: str
+    budget: float
+    estimated_duration: str  # e.g., "1 hour", "2 days"
+    urgency: Literal["low", "medium", "high"] = "medium"
+    location: str
+    photos: List[str] = []  # base64 images
+    status: Literal["open", "negotiating", "accepted", "in_progress", "completed", "cancelled"] = "open"
+    accepted_worker_id: Optional[str] = None
+    final_price: Optional[float] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class JobCreate(BaseModel):
+    title: str
+    description: str
+    category: str
+    budget: float
+    estimated_duration: str
+    urgency: Literal["low", "medium", "high"] = "medium"
+    location: str
+    photos: List[str] = []
+
+# Offer Models (Negotiation System)
+class Offer(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    job_id: str
+    worker_id: str
+    worker_name: str
+    worker_rating: float = 4.5
+    proposed_price: float
+    message: Optional[str] = None
+    status: Literal["pending", "counter_offered", "accepted", "rejected"] = "pending"
+    counter_offer_price: Optional[float] = None  # User's counter offer
+    counter_offer_message: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+class OfferCreate(BaseModel):
+    proposed_price: float
+    message: Optional[str] = None
+
+class CounterOffer(BaseModel):
+    counter_offer_price: float
+    counter_offer_message: Optional[str] = None
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -441,6 +494,209 @@ async def get_business_verification(user_id: str):
     
     verification.pop("_id", None)
     return {"success": True, "verification": verification}
+
+
+# ==================== JOB ROUTES ====================
+
+@api_router.post("/jobs")
+async def create_job(job: JobCreate, user_id: str):
+    new_job = Job(
+        user_id=user_id,
+        title=job.title,
+        description=job.description,
+        category=job.category,
+        budget=job.budget,
+        estimated_duration=job.estimated_duration,
+        urgency=job.urgency,
+        location=job.location,
+        photos=job.photos
+    )
+    
+    await db.jobs.insert_one(new_job.dict())
+    
+    return {
+        "success": True,
+        "message": "Job posted successfully",
+        "job": new_job.dict()
+    }
+
+@api_router.get("/jobs/my")
+async def get_my_jobs(user_id: str):
+    """Get jobs posted by user"""
+    jobs = await db.jobs.find({"user_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return {"success": True, "jobs": jobs}
+
+@api_router.get("/jobs/nearby")
+async def get_nearby_jobs(user_id: str):
+    """Get jobs available for workers (excluding their own)"""
+    jobs = await db.jobs.find(
+        {"status": {"$in": ["open", "negotiating"]}, "user_id": {"$ne": user_id}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    return {"success": True, "jobs": jobs}
+
+@api_router.get("/jobs/{job_id}")
+async def get_job(job_id: str):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Get user info
+    user = await db.users.find_one({"id": job["user_id"]}, {"_id": 0, "password_hash": 0})
+    
+    # Get all offers for this job
+    offers = await db.offers.find({"job_id": job_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    return {
+        "success": True,
+        "job": job,
+        "user": user,
+        "offers": offers
+    }
+
+@api_router.put("/jobs/{job_id}/status")
+async def update_job_status(job_id: str, status: str, user_id: str):
+    job = await db.jobs.find_one({"id": job_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    await db.jobs.update_one(
+        {"id": job_id},
+        {"$set": {"status": status, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"success": True, "message": "Job status updated"}
+
+
+# ==================== OFFER/NEGOTIATION ROUTES ====================
+
+@api_router.post("/jobs/{job_id}/offers")
+async def create_offer(job_id: str, offer: OfferCreate, worker_id: str):
+    """Worker makes an offer on a job"""
+    # Verify job exists
+    job = await db.jobs.find_one({"id": job_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job["status"] not in ["open", "negotiating"]:
+        raise HTTPException(status_code=400, detail="Job is not available for offers")
+    
+    # Get worker info
+    worker = await db.users.find_one({"id": worker_id})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    # Check if worker already made an offer
+    existing = await db.offers.find_one({"job_id": job_id, "worker_id": worker_id})
+    if existing:
+        raise HTTPException(status_code=400, detail="You already made an offer on this job")
+    
+    new_offer = Offer(
+        job_id=job_id,
+        worker_id=worker_id,
+        worker_name=worker["full_name"],
+        proposed_price=offer.proposed_price,
+        message=offer.message
+    )
+    
+    await db.offers.insert_one(new_offer.dict())
+    
+    # Update job status to negotiating
+    await db.jobs.update_one(
+        {"id": job_id},
+        {"$set": {"status": "negotiating", "updated_at": datetime.utcnow()}}
+    )
+    
+    return {
+        "success": True,
+        "message": "Offer submitted successfully",
+        "offer": new_offer.dict()
+    }
+
+@api_router.post("/offers/{offer_id}/counter")
+async def counter_offer(offer_id: str, counter: CounterOffer):
+    """User makes a counter offer"""
+    offer = await db.offers.find_one({"id": offer_id})
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+    
+    await db.offers.update_one(
+        {"id": offer_id},
+        {"$set": {
+            "status": "counter_offered",
+            "counter_offer_price": counter.counter_offer_price,
+            "counter_offer_message": counter.counter_offer_message,
+            "updated_at": datetime.utcnow()
+        }}
+    )
+    
+    return {"success": True, "message": "Counter offer sent"}
+
+@api_router.post("/offers/{offer_id}/accept")
+async def accept_offer(offer_id: str):
+    """User or worker accepts the offer"""
+    offer = await db.offers.find_one({"id": offer_id})
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+    
+    final_price = offer.get("counter_offer_price") or offer["proposed_price"]
+    
+    # Update offer status
+    await db.offers.update_one(
+        {"id": offer_id},
+        {"$set": {"status": "accepted", "updated_at": datetime.utcnow()}}
+    )
+    
+    # Update job - mark as accepted and assign worker
+    await db.jobs.update_one(
+        {"id": offer["job_id"]},
+        {"$set": {
+            "status": "accepted",
+            "accepted_worker_id": offer["worker_id"],
+            "final_price": final_price,
+            "updated_at": datetime.utcnow()
+        }}
+    )
+    
+    # Reject all other offers for this job
+    await db.offers.update_many(
+        {"job_id": offer["job_id"], "id": {"$ne": offer_id}},
+        {"$set": {"status": "rejected", "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"success": True, "message": "Offer accepted"}
+
+@api_router.post("/offers/{offer_id}/reject")
+async def reject_offer(offer_id: str):
+    """Reject an offer"""
+    offer = await db.offers.find_one({"id": offer_id})
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+    
+    await db.offers.update_one(
+        {"id": offer_id},
+        {"$set": {"status": "rejected", "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"success": True, "message": "Offer rejected"}
+
+@api_router.get("/worker/offers/{worker_id}")
+async def get_worker_offers(worker_id: str):
+    """Get all offers made by a worker"""
+    offers = await db.offers.find({"worker_id": worker_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Enrich with job info
+    enriched = []
+    for offer in offers:
+        job = await db.jobs.find_one({"id": offer["job_id"]}, {"_id": 0})
+        if job:
+            offer["job"] = job
+            enriched.append(offer)
+    
+    return {"success": True, "offers": enriched}
 
 
 # Include the router in the main app

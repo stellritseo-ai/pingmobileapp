@@ -63,7 +63,7 @@ export default function HomeScreen() {
               </Text>
               <Button
                 title="Post a Job"
-                onPress={() => router.push('/jobs')}
+                onPress={() => router.push('/post-job')}
                 size="large"
                 style={styles.heroButton}
               />
