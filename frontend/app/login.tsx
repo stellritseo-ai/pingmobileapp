@@ -181,6 +181,26 @@ export default function LoginScreen() {
                 <View style={styles.dividerLine} />
               </View>
 
+              <View style={styles.socialButtons}>
+                <TouchableOpacity
+                  style={styles.socialButton}
+                  activeOpacity={0.7}
+                  onPress={() => Alert.alert('Coming Soon', 'Google login will be available soon')}
+                >
+                  <Ionicons name="logo-google" size={24} color={Colors.white} />
+                  <Text style={styles.socialButtonText}>Google</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.socialButton}
+                  activeOpacity={0.7}
+                  onPress={() => Alert.alert('Coming Soon', 'Apple login will be available soon')}
+                >
+                  <Ionicons name="logo-apple" size={26} color={Colors.white} />
+                  <Text style={styles.socialButtonText}>Apple</Text>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity onPress={handleRegister}>
                 <Text style={styles.registerText}>
                   Don't have an account?{' '}
@@ -267,6 +287,28 @@ const styles = StyleSheet.create({
   },
   registerLink: {
     color: Colors.primary,
+    fontWeight: fontWeight.semibold,
+  },
+  socialButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  socialButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: 14,
+    backgroundColor: Colors.secondaryBackground,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(68, 189, 19, 0.2)',
+  },
+  socialButtonText: {
+    color: Colors.white,
+    fontSize: fontSize.md,
     fontWeight: fontWeight.semibold,
   },
 });
