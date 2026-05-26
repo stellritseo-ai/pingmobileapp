@@ -36,7 +36,7 @@ export default function HomeScreen() {
               <Text style={styles.greeting}>Hello,</Text>
               <Text style={styles.userName}>{user?.full_name || 'User'}</Text>
             </View>
-            <TouchableOpacity style={styles.notificationButton}>
+            <TouchableOpacity style={styles.notificationButton} onPress={() => router.push('/notifications')}>
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationCount}>3</Text>
               </View>

@@ -129,7 +129,7 @@ export default function ProfileScreen() {
 
           {/* Menu Items */}
           <View style={styles.menu}>
-            <TouchableOpacity style={styles.menuItem}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/edit-profile')}>
               <View style={styles.menuItemLeft}>
                 <Ionicons name="person-outline" size={24} color={Colors.primary} />
                 <Text style={styles.menuItemText}>Edit Profile</Text>
@@ -137,7 +137,7 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={20} color={Colors.gray} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/wallet')}>
               <View style={styles.menuItemLeft}>
                 <Ionicons name="wallet-outline" size={24} color={Colors.primary} />
                 <Text style={styles.menuItemText}>Wallet</Text>
@@ -145,7 +145,31 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={20} color={Colors.gray} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/worker-dashboard')}>
+              <View style={styles.menuItemLeft}>
+                <Ionicons name="stats-chart-outline" size={24} color={Colors.primary} />
+                <Text style={styles.menuItemText}>Worker Dashboard</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/live-tracking')}>
+              <View style={styles.menuItemLeft}>
+                <Ionicons name="navigate-outline" size={24} color={Colors.primary} />
+                <Text style={styles.menuItemText}>Live Tracking Demo</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/review')}>
+              <View style={styles.menuItemLeft}>
+                <Ionicons name="star-outline" size={24} color={Colors.primary} />
+                <Text style={styles.menuItemText}>Rate Worker Demo</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={Colors.gray} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/job-history')}>
               <View style={styles.menuItemLeft}>
                 <Ionicons name="time-outline" size={24} color={Colors.primary} />
                 <Text style={styles.menuItemText}>Job History</Text>
@@ -153,7 +177,7 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={20} color={Colors.gray} />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/settings')}>
               <View style={styles.menuItemLeft}>
                 <Ionicons name="settings-outline" size={24} color={Colors.primary} />
                 <Text style={styles.menuItemText}>Settings</Text>

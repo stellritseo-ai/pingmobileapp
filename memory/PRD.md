@@ -8,72 +8,77 @@ Ping Buz is a hyperlocal real-time workforce marketplace platform built as an Ex
 - Backend: FastAPI + MongoDB
 - Brand Colors: #44BD13 (primary), #111317 (bg), #1C1E22 (secondary)
 
-## User Types
-1. Normal User - Posts jobs, hires workers
-2. Individual Worker - Accepts jobs, makes offers
-3. Business Owner - Manages business profile
+## Complete Frontend Design (COMPLETED ✅)
 
-## Phase 1: Authentication & Verification (COMPLETED ✅)
-- Splash screen with cinematic animations
-- 5-slide onboarding flow
-- Role selection (Pro vs Normal)
-- Pro type selection (Worker vs Business)
-- Email/Mobile + Password + OTP auth (mock OTP: 123456)
-- Worker verification (Front ID + Back ID + Selfie)
-- Business verification (License + business info)
-- Main app with 5-tab navigation
-- Profile with "Become a Worker" option
-- Google & Apple social login buttons (UI only)
+### Authentication Flow
+- ✅ Cinematic splash screen with glow animations
+- ✅ 5-slide onboarding (with skip)
+- ✅ Role selection (Pro vs Normal)
+- ✅ Pro type selection (Worker vs Business)
+- ✅ Login (email/mobile toggle + Google/Apple social buttons)
+- ✅ Registration (with validation)
+- ✅ OTP verification (auto-fill in dev)
 
-## Phase 2: Job System (COMPLETED ✅)
-### Features
-- Post Job flow with category, title, description, budget, duration, urgency, location, photos
-- Job listings (My Jobs for users, Nearby Jobs for workers)
-- Job details with full information display
-- **Negotiation System** - Workers make offers, users counter or accept
-- Offer status tracking (pending → counter_offered → accepted/rejected)
-- Auto-reject other offers when one is accepted
-- Job status transitions (open → negotiating → accepted)
+### Verification Flow
+- ✅ Worker verification (Front ID + Back ID + Selfie upload)
+- ✅ Business verification (License + business info)
 
-### Backend Endpoints
-- POST /api/jobs - Create job
-- GET /api/jobs/my - User's jobs
-- GET /api/jobs/nearby - Available jobs for workers
-- GET /api/jobs/{id} - Job details with offers
-- POST /api/jobs/{id}/offers - Worker submits offer
-- POST /api/offers/{id}/counter - User counter offer
-- POST /api/offers/{id}/accept - Accept offer
-- POST /api/offers/{id}/reject - Reject offer
+### Main App (5 Tabs)
+- ✅ Home - Categories, hero CTA, nearby workers
+- ✅ Jobs - My Jobs / Nearby Jobs with tabs (functional with backend)
+- ✅ Map - Workers on map with markers, radius circle, controls
+- ✅ Chat - Chat list with online indicators
+- ✅ Profile - Full profile with menu items
 
-### Testing
-- Phase 1: 11/11 tests passed (100%)
-- Phase 2: 14/14 tests passed (100%)
+### Job System (Functional + Backend)
+- ✅ Post Job - Multi-step with categories, urgency, photos
+- ✅ Job Details - With negotiation UI
+- ✅ Negotiation - Offer/counter/accept/reject (works end-to-end)
 
-## Future Phases
+### Additional Screens (Mock UI, ready for backend)
+- ✅ **Live Tracking** - Uber-style map with worker marker, route, ETA badge, progress bar, worker card with call/chat buttons
+- ✅ **Worker Dashboard** - Online toggle, earnings hero card, weekly bar chart, stats cards, nearby jobs
+- ✅ **Chat Detail** - WhatsApp-style chat with typing indicator, read receipts, attachment, voice
+- ✅ **Notifications** - Filterable list with unread badges, icons by type
+- ✅ **Wallet** - Balance card with Add/Withdraw/Transfer, payment methods (Stripe/Khalti/eSewa), transaction history
+- ✅ **Review/Rating** - 5-star overall + detailed (Quality/Communication/Punctuality) + recommend yes/no
+- ✅ **Settings** - 5 sections (Account/Notifications/Security/Preferences/Support) with switches
+- ✅ **Edit Profile** - Avatar with camera button, form fields
+- ✅ **Job History** - Filterable list with stats summary, ratings display
 
-### Phase 3: Real-time Features (Pending)
-- Socket.IO chat
-- Live GPS tracking
-- Push notifications
-- Worker arrival ETA
+## Design System
+- Glassmorphism cards with green border accents
+- Linear gradients for hero sections
+- Premium dark mode #111317 → #12221F
+- Animated transitions and floating effects
+- 44x44 minimum touch targets
+- SafeAreaView + KeyboardAvoidingView on all screens
 
-### Phase 4: Payments (Pending)
-- Stripe, Khalti, eSewa integration
-- Escrow wallet system
+## Backend Status
+- Phase 1 Auth: 11/11 tests passed ✅
+- Phase 2 Jobs/Offers: 14/14 tests passed ✅
+- All endpoints ready to be wired to remaining mock screens
 
-### Phase 5: Reviews & Admin (Pending)
-- Star rating system
-- Admin verification dashboard
-- Dispute handling
+## How to Connect Backend Later
+Each mock screen uses static arrays. To connect:
+1. Replace mock arrays with `useState` + `useEffect` calling API
+2. Endpoints needed for new features:
+   - GET /api/notifications/{user_id}
+   - GET /api/chat/list/{user_id}
+   - GET /api/chat/messages/{chat_id}
+   - POST /api/chat/messages
+   - GET /api/wallet/{user_id}
+   - GET /api/transactions/{user_id}
+   - POST /api/reviews
+   - GET /api/job-history/{user_id}
+   - POST /api/tracking/update-location
 
 ## Known Limitations
-- OTP is MOCKED (always 123456 in dev)
-- No real SMS/email service integrated
-- Google Maps not integrated (location is text-based)
+- All screens after job system are MOCKED (static data)
+- OTP is MOCKED (always 123456)
+- Maps are static visualizations (not real Google Maps)
 - Payments not implemented
-- Real-time features not implemented
-- Auth uses query params (not JWT) - needs hardening before prod
-- Passwords use SHA-256 (should be bcrypt in prod)
+- Real-time features (Socket.IO) not implemented
 
 ## Test Credentials
 See /app/memory/test_credentials.md
