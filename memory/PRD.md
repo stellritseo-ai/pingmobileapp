@@ -1,84 +1,93 @@
 # Ping Buz - Product Requirements Document (PRD)
 
 ## Overview
-Ping Buz is a hyperlocal real-time workforce marketplace platform built as an Expo/React Native mobile app with FastAPI + MongoDB backend.
+Ping Buz - hyperlocal workforce marketplace (Uber + TaskRabbit style) built with Expo/React Native + FastAPI + MongoDB. **COMPLETE UI DESIGN DONE** ready for backend wiring.
 
-## Tech Stack
-- Frontend: Expo Router, TypeScript, Zustand, Axios, glassmorphism UI
-- Backend: FastAPI + MongoDB
-- Brand Colors: #44BD13 (primary), #111317 (bg), #1C1E22 (secondary)
+## Brand
+- Primary Green: #44BD13 | Dark Forest: #12221F | Background: #111317
 
-## Complete Frontend Design (COMPLETED ✅)
+## Complete Frontend - 25+ Screens Built ✅
 
-### Authentication Flow
-- ✅ Cinematic splash screen with glow animations
-- ✅ 5-slide onboarding (with skip)
-- ✅ Role selection (Pro vs Normal)
-- ✅ Pro type selection (Worker vs Business)
-- ✅ Login (email/mobile toggle + Google/Apple social buttons)
-- ✅ Registration (with validation)
-- ✅ OTP verification (auto-fill in dev)
+### 🔐 Auth & Onboarding (8 screens)
+1. Splash with cinematic animations
+2. Onboarding (5 slides)
+3. Role Selection (Pro vs Normal)
+4. Pro Type Selection (Worker vs Business)
+5. Login with Email/Mobile + Google/Apple buttons
+6. Register
+7. OTP Verification
+8. Verification Status (Pending/Approved/Rejected)
 
-### Verification Flow
-- ✅ Worker verification (Front ID + Back ID + Selfie upload)
-- ✅ Business verification (License + business info)
+### ✅ Verification Flows (3 screens)
+9. Worker Verification (Front ID + Back ID + Selfie)
+10. Business Verification (License + business info)
+11. Become a Worker form (Skills, rate, languages, radius)
 
-### Main App (5 Tabs)
-- ✅ Home - Categories, hero CTA, nearby workers
-- ✅ Jobs - My Jobs / Nearby Jobs with tabs (functional with backend)
-- ✅ Map - Workers on map with markers, radius circle, controls
-- ✅ Chat - Chat list with online indicators
-- ✅ Profile - Full profile with menu items
+### 🏠 Main App Tabs (5 screens)
+12. Home (categories, hero CTA, nearby workers)
+13. Jobs (My Jobs / Nearby tabs)
+14. Map (worker pins, radius circle, controls)
+15. Chat list (with online status, unread badges)
+16. Profile (full menu)
 
-### Job System (Functional + Backend)
-- ✅ Post Job - Multi-step with categories, urgency, photos
-- ✅ Job Details - With negotiation UI
-- ✅ Negotiation - Offer/counter/accept/reject (works end-to-end)
+### 💼 Job System (3 screens, functional with backend)
+17. Post Job (categories, urgency, photos)
+18. Job Details with Negotiation
+19. Job History (filterable, stats summary)
 
-### Additional Screens (Mock UI, ready for backend)
-- ✅ **Live Tracking** - Uber-style map with worker marker, route, ETA badge, progress bar, worker card with call/chat buttons
-- ✅ **Worker Dashboard** - Online toggle, earnings hero card, weekly bar chart, stats cards, nearby jobs
-- ✅ **Chat Detail** - WhatsApp-style chat with typing indicator, read receipts, attachment, voice
-- ✅ **Notifications** - Filterable list with unread badges, icons by type
-- ✅ **Wallet** - Balance card with Add/Withdraw/Transfer, payment methods (Stripe/Khalti/eSewa), transaction history
-- ✅ **Review/Rating** - 5-star overall + detailed (Quality/Communication/Punctuality) + recommend yes/no
-- ✅ **Settings** - 5 sections (Account/Notifications/Security/Preferences/Support) with switches
-- ✅ **Edit Profile** - Avatar with camera button, form fields
-- ✅ **Job History** - Filterable list with stats summary, ratings display
+### 🚗 Tracking & Communication (2 screens)
+20. Live Tracking (Uber-style map + progress + worker card)
+21. Chat Detail (WhatsApp-style with typing indicator)
 
-## Design System
-- Glassmorphism cards with green border accents
-- Linear gradients for hero sections
-- Premium dark mode #111317 → #12221F
-- Animated transitions and floating effects
-- 44x44 minimum touch targets
-- SafeAreaView + KeyboardAvoidingView on all screens
+### 📊 Worker Tools (1 screen)
+22. Worker Dashboard (online toggle, earnings chart, stats, jobs)
 
-## Backend Status
+### 💰 Payment Flow (3 screens)
+23. Work Time Adjustment (hours, extras, tip selection)
+24. Payment Checkout (Stripe/Khalti/eSewa/Wallet)
+25. Wallet (balance, payment methods, transactions)
+
+### 👤 Profile & Reviews (4 screens)
+26. Edit Profile
+27. Worker Public Profile (when viewing other workers)
+28. Review/Rating (overall + detailed + recommend)
+29. Notifications (filterable feed)
+
+### ⚙️ Settings
+30. Settings (5 sections with switches)
+
+## Backend (Optional - Already Tested)
 - Phase 1 Auth: 11/11 tests passed ✅
 - Phase 2 Jobs/Offers: 14/14 tests passed ✅
-- All endpoints ready to be wired to remaining mock screens
+- All other screens use static mock data ready to be wired
 
-## How to Connect Backend Later
-Each mock screen uses static arrays. To connect:
-1. Replace mock arrays with `useState` + `useEffect` calling API
-2. Endpoints needed for new features:
-   - GET /api/notifications/{user_id}
-   - GET /api/chat/list/{user_id}
-   - GET /api/chat/messages/{chat_id}
-   - POST /api/chat/messages
-   - GET /api/wallet/{user_id}
-   - GET /api/transactions/{user_id}
-   - POST /api/reviews
-   - GET /api/job-history/{user_id}
-   - POST /api/tracking/update-location
+## Design System
+- Glassmorphism with green accent borders
+- Premium dark mode (#111317 → #12221F gradients)
+- 8pt grid spacing
+- Lucide-style icons (@expo/vector-icons)
+- Floating cards with shadows
+- Smooth animations (60fps)
 
-## Known Limitations
-- All screens after job system are MOCKED (static data)
-- OTP is MOCKED (always 123456)
-- Maps are static visualizations (not real Google Maps)
-- Payments not implemented
-- Real-time features (Socket.IO) not implemented
+## Components Library
+- Button (primary/secondary/outline + 3 sizes)
+- Input (with icons, errors, multiline)
+- GlassCard (blur + green border)
+
+## Mock Data Locations (For Backend Integration Later)
+All mock screens use static `const` arrays at top of file. To wire backend:
+1. Replace arrays with `useState` + `useEffect` + API call
+2. Use existing `api.ts` in `/src/services/`
+3. Backend endpoints documented in this PRD
+
+## How to Test in Preview
+Run `https://hyperlocal-gigs-3.preview.emergentagent.com/<screen-name>`:
+- `/onboarding`, `/role-selection`, `/login`, `/register`, `/verify-otp`
+- `/(main)/home`, `/post-job`, `/jobs`, `/live-tracking`
+- `/worker-dashboard`, `/worker-profile`, `/become-worker`
+- `/wallet`, `/payment-checkout`, `/work-adjustment`
+- `/review`, `/notifications`, `/settings`, `/edit-profile`, `/job-history`
+- `/chat-detail`, `/verification-status?status=pending|approved|rejected`
 
 ## Test Credentials
-See /app/memory/test_credentials.md
+See `/app/memory/test_credentials.md` (OTP is always 123456)

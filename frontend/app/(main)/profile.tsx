@@ -33,7 +33,7 @@ export default function ProfileScreen() {
   };
 
   const handleBecomeWorker = () => {
-    router.push('/worker/verification');
+    router.push('/become-worker');
   };
 
   return (
