@@ -150,4 +150,59 @@ export const offersAPI = {
   },
 };
 
+export const notificationsAPI = {
+  getNotifications: async (userId: string, type?: string) => {
+    const response = await api.get(`/notifications/${userId}${type ? `?type=${type}` : ''}`);
+    return response.data;
+  },
+  markAsRead: async (notificationId: string) => {
+    const response = await api.post(`/notifications/${notificationId}/read`);
+    return response.data;
+  },
+  markAllRead: async (userId: string) => {
+    const response = await api.post(`/notifications/${userId}/read-all`);
+    return response.data;
+  },
+};
+
+export interface ReviewCreateData {
+  job_id: string;
+  worker_id: string;
+  overall_rating: number;
+  quality_rating: number;
+  communication_rating: number;
+  punctuality_rating: number;
+  review_text?: string;
+  recommend: boolean;
+}
+
+export const reviewsAPI = {
+  create: async (userId: string, userName: string, data: ReviewCreateData) => {
+    const response = await api.post(`/reviews?user_id=${userId}&user_name=${encodeURIComponent(userName)}`, data);
+    return response.data;
+  },
+  getWorkerReviews: async (workerId: string) => {
+    const response = await api.get(`/reviews/worker/${workerId}`);
+    return response.data;
+  },
+};
+
+export const historyAPI = {
+  getJobHistory: async (userId: string, status?: string) => {
+    const response = await api.get(`/jobs/history/${userId}${status ? `?status=${status}` : ''}`);
+    return response.data;
+  },
+};
+
+export const workerDashboardAPI = {
+  getDashboard: async (workerId: string) => {
+    const response = await api.get(`/worker/dashboard/${workerId}`);
+    return response.data;
+  },
+  updateStatus: async (workerId: string, isOnline: boolean) => {
+    const response = await api.put(`/worker/status/${workerId}`, { is_online: isOnline });
+    return response.data;
+  },
+};
+
 export default api;

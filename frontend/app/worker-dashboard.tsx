@@ -1,43 +1,81 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, RefreshControl } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/Colors';
 import { fontSize, fontWeight, spacing, borderRadius } from '@/src/constants/theme';
 import { GlassCard } from '@/src/components/ui/GlassCard';
-
-const EARNINGS_DATA = [
-  { day: 'M', value: 45 },
-  { day: 'T', value: 72 },
-  { day: 'W', value: 35 },
-  { day: 'T', value: 90 },
-  { day: 'F', value: 110 },
-  { day: 'S', value: 145 },
-  { day: 'S', value: 85 },
-];
-
-const NEARBY_JOBS = [
-  { id: '1', title: 'Fix kitchen sink', category: 'Plumbing', budget: '$45', distance: '1.2 km', urgency: 'Urgent' },
-  { id: '2', title: 'Install ceiling fan', category: 'Electrician', budget: '$60', distance: '2.5 km', urgency: 'Normal' },
-  { id: '3', title: 'Move furniture', category: 'Moving', budget: '$120', distance: '3.1 km', urgency: 'Flexible' },
-];
+import { workerDashboardAPI } from '@/src/services/api';
+import { useAuthStore } from '@/src/store/authStore';
 
 export default function WorkerDashboardScreen() {
   const router = useRouter();
-  const [isOnline, setIsOnline] = useState(true);
-  const maxEarnings = Math.max(...EARNINGS_DATA.map((d) => d.value));
+  const { user } = useAuthStore();
+  const [isOnline, setIsOnline] = useState(false);
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const response = await workerDashboardAPI.getDashboard(user.id);
+      setData(response);
+      setIsOnline(response.worker?.is_online || false);
+    } catch (error) {
+      console.error('Failed to load dashboard:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user?.id]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const onRefresh = () => { setRefreshing(true); load(); };
+
+  const handleToggleOnline = async (value: boolean) => {
+    if (!user?.id) return;
+    setIsOnline(value);
+    try {
+      await workerDashboardAPI.updateStatus(user.id, value);
+    } catch (error) {
+      setIsOnline(!value); // Revert on error
+      console.error('Failed to update status:', error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <LinearGradient colors={[Colors.background, Colors.darkForest]} style={styles.container}>
+        <SafeAreaView style={[styles.safeArea, styles.centerLoading]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </SafeAreaView>
+      </LinearGradient>
+    );
+  }
+
+  const earnings = data?.earnings || { today: 0, this_month: 0, weekly: [] };
+  const stats = data?.stats || { jobs_today: 0, active_jobs: 0, pending_offers: 0, completed_jobs: 0, rating: 0, acceptance_rate: 0 };
+  const nearbyJobs = data?.nearby_jobs || [];
+  const weeklyData = earnings.weekly.length > 0 ? earnings.weekly : [{ day: '-', value: 0 }];
+  const maxEarnings = Math.max(...weeklyData.map((d: any) => d.value), 1);
 
   return (
     <LinearGradient colors={[Colors.background, Colors.darkForest]} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        >
           {/* Header */}
           <View style={styles.header}>
             <View>
               <Text style={styles.greeting}>Welcome back,</Text>
-              <Text style={styles.name}>John Doe</Text>
+              <Text style={styles.name}>{user?.full_name || data?.worker?.name || 'Worker'}</Text>
             </View>
             <View style={styles.onlineToggle}>
               <View style={styles.onlineIndicator}>
@@ -48,7 +86,7 @@ export default function WorkerDashboardScreen() {
               </View>
               <Switch
                 value={isOnline}
-                onValueChange={setIsOnline}
+                onValueChange={handleToggleOnline}
                 trackColor={{ false: Colors.darkGray, true: Colors.primary }}
                 thumbColor={Colors.white}
               />
@@ -57,29 +95,20 @@ export default function WorkerDashboardScreen() {
 
           {/* Earnings Hero Card */}
           <GlassCard intensity={30} style={styles.heroCard}>
-            <LinearGradient
-              colors={['rgba(68, 189, 19, 0.2)', 'transparent']}
-              style={styles.heroGradient}
-            >
+            <LinearGradient colors={['rgba(68, 189, 19, 0.2)', 'transparent']} style={styles.heroGradient}>
               <Text style={styles.heroLabel}>Today's Earnings</Text>
-              <Text style={styles.heroAmount}>$245.50</Text>
-              <View style={styles.heroStats}>
-                <View style={styles.heroStat}>
-                  <Ionicons name="trending-up" size={16} color={Colors.success} />
-                  <Text style={styles.heroStatText}>+12% from yesterday</Text>
-                </View>
-              </View>
+              <Text style={styles.heroAmount}>${earnings.today.toFixed(2)}</Text>
               <View style={styles.heroBadges}>
                 <View style={styles.heroBadge}>
-                  <Text style={styles.heroBadgeNumber}>5</Text>
+                  <Text style={styles.heroBadgeNumber}>{stats.jobs_today}</Text>
                   <Text style={styles.heroBadgeLabel}>Jobs Today</Text>
                 </View>
                 <View style={styles.heroBadge}>
-                  <Text style={styles.heroBadgeNumber}>4.9</Text>
+                  <Text style={styles.heroBadgeNumber}>{stats.rating || '-'}</Text>
                   <Text style={styles.heroBadgeLabel}>Rating</Text>
                 </View>
                 <View style={styles.heroBadge}>
-                  <Text style={styles.heroBadgeNumber}>98%</Text>
+                  <Text style={styles.heroBadgeNumber}>{stats.acceptance_rate}%</Text>
                   <Text style={styles.heroBadgeLabel}>Acceptance</Text>
                 </View>
               </View>
@@ -90,22 +119,16 @@ export default function WorkerDashboardScreen() {
           <Text style={styles.sectionTitle}>Weekly Earnings</Text>
           <GlassCard intensity={20} style={styles.chartCard}>
             <View style={styles.chartHeader}>
-              <Text style={styles.chartTotal}>$582.00</Text>
-              <View style={styles.chartTrend}>
-                <Ionicons name="trending-up" size={14} color={Colors.success} />
-                <Text style={styles.chartTrendText}>+24%</Text>
-              </View>
+              <Text style={styles.chartTotal}>${earnings.this_month.toFixed(2)}</Text>
+              <Text style={{ color: Colors.gray, fontSize: fontSize.xs }}>This month</Text>
             </View>
             <View style={styles.chart}>
-              {EARNINGS_DATA.map((item, idx) => (
+              {weeklyData.map((item: any, idx: number) => (
                 <View key={idx} style={styles.barContainer}>
                   <View style={styles.barWrapper}>
                     <LinearGradient
                       colors={[Colors.primary, 'rgba(68, 189, 19, 0.3)']}
-                      style={[
-                        styles.bar,
-                        { height: `${(item.value / maxEarnings) * 100}%` },
-                      ]}
+                      style={[styles.bar, { height: `${(item.value / maxEarnings) * 100}%` }]}
                     />
                   </View>
                   <Text style={styles.barLabel}>{item.day}</Text>
@@ -120,21 +143,21 @@ export default function WorkerDashboardScreen() {
               <View style={[styles.statIconContainer, { backgroundColor: 'rgba(68, 189, 19, 0.2)' }]}>
                 <Ionicons name="briefcase" size={20} color={Colors.primary} />
               </View>
-              <Text style={styles.statCardValue}>12</Text>
+              <Text style={styles.statCardValue}>{stats.active_jobs}</Text>
               <Text style={styles.statCardLabel}>Active Jobs</Text>
             </GlassCard>
             <GlassCard intensity={20} style={styles.statCard}>
               <View style={[styles.statIconContainer, { backgroundColor: 'rgba(245, 158, 11, 0.2)' }]}>
                 <Ionicons name="time" size={20} color={Colors.warning} />
               </View>
-              <Text style={styles.statCardValue}>3</Text>
+              <Text style={styles.statCardValue}>{stats.pending_offers}</Text>
               <Text style={styles.statCardLabel}>Pending</Text>
             </GlassCard>
             <GlassCard intensity={20} style={styles.statCard}>
               <View style={[styles.statIconContainer, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]}>
                 <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
               </View>
-              <Text style={styles.statCardValue}>247</Text>
+              <Text style={styles.statCardValue}>{stats.completed_jobs}</Text>
               <Text style={styles.statCardLabel}>Completed</Text>
             </GlassCard>
           </View>
@@ -142,46 +165,45 @@ export default function WorkerDashboardScreen() {
           {/* Nearby Jobs */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Nearby Jobs</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/(main)/jobs')}>
               <Text style={styles.seeAll}>See All</Text>
             </TouchableOpacity>
           </View>
 
-          {NEARBY_JOBS.map((job) => (
-            <TouchableOpacity key={job.id} activeOpacity={0.8}>
-              <GlassCard intensity={20} style={styles.jobCard}>
-                <View style={styles.jobHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.jobTitle}>{job.title}</Text>
-                    <Text style={styles.jobCategory}>{job.category}</Text>
+          {nearbyJobs.length === 0 ? (
+            <View style={styles.emptyNearby}>
+              <Ionicons name="search" size={40} color={Colors.darkGray} />
+              <Text style={styles.emptyNearbyText}>No nearby jobs right now</Text>
+            </View>
+          ) : nearbyJobs.map((job: any) => {
+            const urgencyLabel = job.urgency === 'high' ? 'Urgent' : job.urgency === 'low' ? 'Flexible' : 'Normal';
+            const urgencyColor = job.urgency === 'high' ? Colors.error : job.urgency === 'low' ? Colors.success : Colors.warning;
+            return (
+              <TouchableOpacity key={job.id} activeOpacity={0.8} onPress={() => router.push(`/job-details?id=${job.id}`)}>
+                <GlassCard intensity={20} style={styles.jobCard}>
+                  <View style={styles.jobHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.jobTitle}>{job.title}</Text>
+                      <Text style={styles.jobCategory}>{job.category}</Text>
+                    </View>
+                    <View style={[styles.urgencyBadge, { backgroundColor: `${urgencyColor}30` }]}>
+                      <Text style={[styles.urgencyText, { color: urgencyColor }]}>{urgencyLabel}</Text>
+                    </View>
                   </View>
-                  <View style={[
-                    styles.urgencyBadge,
-                    job.urgency === 'Urgent' && { backgroundColor: 'rgba(239, 68, 68, 0.2)' },
-                    job.urgency === 'Normal' && { backgroundColor: 'rgba(245, 158, 11, 0.2)' },
-                    job.urgency === 'Flexible' && { backgroundColor: 'rgba(16, 185, 129, 0.2)' },
-                  ]}>
-                    <Text style={[
-                      styles.urgencyText,
-                      job.urgency === 'Urgent' && { color: Colors.error },
-                      job.urgency === 'Normal' && { color: Colors.warning },
-                      job.urgency === 'Flexible' && { color: Colors.success },
-                    ]}>{job.urgency}</Text>
+                  <View style={styles.jobFooter}>
+                    <View style={styles.jobInfo}>
+                      <Ionicons name="cash" size={14} color={Colors.primary} />
+                      <Text style={styles.jobInfoText}>${job.budget}</Text>
+                    </View>
+                    <View style={styles.jobInfo}>
+                      <Ionicons name="location" size={14} color={Colors.gray} />
+                      <Text style={styles.jobInfoText} numberOfLines={1}>{job.location}</Text>
+                    </View>
                   </View>
-                </View>
-                <View style={styles.jobFooter}>
-                  <View style={styles.jobInfo}>
-                    <Ionicons name="cash" size={14} color={Colors.primary} />
-                    <Text style={styles.jobInfoText}>{job.budget}</Text>
-                  </View>
-                  <View style={styles.jobInfo}>
-                    <Ionicons name="location" size={14} color={Colors.gray} />
-                    <Text style={styles.jobInfoText}>{job.distance}</Text>
-                  </View>
-                </View>
-              </GlassCard>
-            </TouchableOpacity>
-          ))}
+                </GlassCard>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -421,5 +443,19 @@ const styles = StyleSheet.create({
   jobInfoText: {
     fontSize: fontSize.sm,
     color: Colors.lightGray,
+  },
+  centerLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyNearby: {
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+  },
+  emptyNearbyText: {
+    color: Colors.gray,
+    fontSize: fontSize.sm,
+    marginTop: spacing.sm,
   },
 });

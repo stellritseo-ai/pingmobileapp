@@ -193,6 +193,51 @@ class CounterOffer(BaseModel):
     counter_offer_message: Optional[str] = None
 
 
+# Notification Models
+class Notification(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    type: Literal["offer", "job", "payment", "chat", "verification", "review"]
+    title: str
+    message: str
+    icon: str = "notifications"
+    color: str = "#44BD13"
+    related_id: Optional[str] = None  # job_id, offer_id, etc
+    read: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# Review Models
+class Review(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    job_id: str
+    worker_id: str
+    user_id: str
+    user_name: str
+    overall_rating: int  # 1-5
+    quality_rating: int
+    communication_rating: int
+    punctuality_rating: int
+    review_text: Optional[str] = None
+    recommend: bool
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ReviewCreate(BaseModel):
+    job_id: str
+    worker_id: str
+    overall_rating: int
+    quality_rating: int
+    communication_rating: int
+    punctuality_rating: int
+    review_text: Optional[str] = None
+    recommend: bool
+
+
+# Worker Online Status
+class WorkerStatusUpdate(BaseModel):
+    is_online: bool
+
+
 # ==================== HELPER FUNCTIONS ====================
 
 def hash_password(password: str) -> str:
@@ -697,6 +742,279 @@ async def get_worker_offers(worker_id: str):
             enriched.append(offer)
     
     return {"success": True, "offers": enriched}
+
+
+# ==================== NOTIFICATION ROUTES ====================
+
+async def create_notification(user_id: str, type: str, title: str, message: str, icon: str = "notifications", color: str = "#44BD13", related_id: Optional[str] = None):
+    """Helper to create notifications"""
+    notif = Notification(
+        user_id=user_id,
+        type=type,
+        title=title,
+        message=message,
+        icon=icon,
+        color=color,
+        related_id=related_id
+    )
+    await db.notifications.insert_one(notif.dict())
+    return notif
+
+
+@api_router.get("/notifications/{user_id}")
+async def get_notifications(user_id: str, type: Optional[str] = None):
+    query = {"user_id": user_id}
+    if type and type != "all":
+        query["type"] = type
+    
+    notifications = await db.notifications.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    unread_count = await db.notifications.count_documents({"user_id": user_id, "read": False})
+    
+    return {
+        "success": True,
+        "notifications": notifications,
+        "unread_count": unread_count
+    }
+
+
+@api_router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str):
+    await db.notifications.update_one(
+        {"id": notification_id},
+        {"$set": {"read": True}}
+    )
+    return {"success": True}
+
+
+@api_router.post("/notifications/{user_id}/read-all")
+async def mark_all_read(user_id: str):
+    await db.notifications.update_many(
+        {"user_id": user_id},
+        {"$set": {"read": True}}
+    )
+    return {"success": True}
+
+
+# ==================== REVIEW ROUTES ====================
+
+@api_router.post("/reviews")
+async def create_review(review: ReviewCreate, user_id: str, user_name: str):
+    # Check if review already exists
+    existing = await db.reviews.find_one({"job_id": review.job_id, "user_id": user_id})
+    if existing:
+        raise HTTPException(status_code=400, detail="Review already submitted")
+    
+    new_review = Review(
+        job_id=review.job_id,
+        worker_id=review.worker_id,
+        user_id=user_id,
+        user_name=user_name,
+        overall_rating=review.overall_rating,
+        quality_rating=review.quality_rating,
+        communication_rating=review.communication_rating,
+        punctuality_rating=review.punctuality_rating,
+        review_text=review.review_text,
+        recommend=review.recommend
+    )
+    await db.reviews.insert_one(new_review.dict())
+    
+    # Create notification for worker
+    await create_notification(
+        user_id=review.worker_id,
+        type="review",
+        title="New Review",
+        message=f"{user_name} rated you {review.overall_rating} stars!",
+        icon="star",
+        color="#F59E0B",
+        related_id=new_review.id
+    )
+    
+    return {"success": True, "review": new_review.dict()}
+
+
+@api_router.get("/reviews/worker/{worker_id}")
+async def get_worker_reviews(worker_id: str):
+    reviews = await db.reviews.find({"worker_id": worker_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Calculate average ratings
+    if reviews:
+        total = len(reviews)
+        avg_overall = sum(r["overall_rating"] for r in reviews) / total
+        avg_quality = sum(r["quality_rating"] for r in reviews) / total
+        avg_communication = sum(r["communication_rating"] for r in reviews) / total
+        avg_punctuality = sum(r["punctuality_rating"] for r in reviews) / total
+        recommend_count = sum(1 for r in reviews if r["recommend"])
+    else:
+        avg_overall = avg_quality = avg_communication = avg_punctuality = 0
+        recommend_count = 0
+    
+    return {
+        "success": True,
+        "reviews": reviews,
+        "stats": {
+            "total_reviews": len(reviews),
+            "avg_overall": round(avg_overall, 1),
+            "avg_quality": round(avg_quality, 1),
+            "avg_communication": round(avg_communication, 1),
+            "avg_punctuality": round(avg_punctuality, 1),
+            "recommend_percentage": round((recommend_count / len(reviews)) * 100) if reviews else 0
+        }
+    }
+
+
+# ==================== JOB HISTORY ROUTES ====================
+
+@api_router.get("/jobs/history/{user_id}")
+async def get_job_history(user_id: str, status: Optional[str] = None):
+    """Get job history for user (posted jobs) or worker (accepted jobs)"""
+    # Get user role
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user["role"] == "individual_worker":
+        # Worker's accepted jobs
+        query = {"accepted_worker_id": user_id}
+    else:
+        # User's posted jobs
+        query = {"user_id": user_id}
+    
+    if status and status != "all":
+        query["status"] = status
+    
+    jobs = await db.jobs.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Enrich with review info for completed jobs
+    enriched = []
+    for job in jobs:
+        if job["status"] == "completed":
+            review = await db.reviews.find_one({"job_id": job["id"]}, {"_id": 0})
+            job["review"] = review
+        enriched.append(job)
+    
+    # Calculate stats
+    completed_jobs = [j for j in jobs if j["status"] == "completed"]
+    total_spent = sum(j.get("final_price") or j.get("budget", 0) for j in completed_jobs)
+    
+    avg_rating = 0
+    if completed_jobs:
+        ratings = [j.get("review", {}).get("overall_rating", 0) for j in completed_jobs if j.get("review")]
+        if ratings:
+            avg_rating = round(sum(ratings) / len(ratings), 1)
+    
+    return {
+        "success": True,
+        "jobs": enriched,
+        "stats": {
+            "total_jobs": len(jobs),
+            "completed_jobs": len(completed_jobs),
+            "total_amount": round(total_spent, 2),
+            "avg_rating": avg_rating
+        }
+    }
+
+
+# ==================== WORKER DASHBOARD ROUTES ====================
+
+@api_router.get("/worker/dashboard/{worker_id}")
+async def get_worker_dashboard(worker_id: str):
+    """Get worker dashboard stats"""
+    from datetime import timedelta
+    
+    # Get worker info
+    worker = await db.users.find_one({"id": worker_id})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    # Get worker profile for online status
+    profile = await db.worker_profiles.find_one({"user_id": worker_id}, {"_id": 0})
+    
+    # Get all completed jobs for this worker
+    completed = await db.jobs.find(
+        {"accepted_worker_id": worker_id, "status": "completed"},
+        {"_id": 0}
+    ).to_list(1000)
+    
+    # Get active jobs
+    active = await db.jobs.find(
+        {"accepted_worker_id": worker_id, "status": {"$in": ["accepted", "in_progress"]}},
+        {"_id": 0}
+    ).to_list(100)
+    
+    # Calculate today's earnings
+    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_completed = [j for j in completed if j.get("updated_at", today) >= today]
+    today_earnings = sum(j.get("final_price") or j.get("budget", 0) for j in today_completed)
+    
+    # Calculate this month earnings
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_completed = [j for j in completed if j.get("updated_at", month_start) >= month_start]
+    month_earnings = sum(j.get("final_price") or j.get("budget", 0) for j in month_completed)
+    
+    # Weekly earnings breakdown (last 7 days)
+    weekly = []
+    for i in range(6, -1, -1):
+        day_start = (datetime.utcnow() - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        day_jobs = [j for j in completed if day_start <= j.get("updated_at", day_start) < day_end]
+        day_earnings = sum(j.get("final_price") or j.get("budget", 0) for j in day_jobs)
+        weekly.append({
+            "day": day_start.strftime("%a")[0],
+            "value": round(day_earnings, 2)
+        })
+    
+    # Get rating
+    reviews = await db.reviews.find({"worker_id": worker_id}).to_list(1000)
+    avg_rating = 0
+    if reviews:
+        avg_rating = round(sum(r["overall_rating"] for r in reviews) / len(reviews), 1)
+    
+    # Get nearby open jobs
+    nearby_jobs = await db.jobs.find(
+        {"status": "open", "user_id": {"$ne": worker_id}},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(5).to_list(5)
+    
+    # Get pending offers
+    pending_offers = await db.offers.count_documents({
+        "worker_id": worker_id,
+        "status": "pending"
+    })
+    
+    return {
+        "success": True,
+        "worker": {
+            "id": worker["id"],
+            "name": worker["full_name"],
+            "is_online": profile.get("is_online", False) if profile else False,
+            "verified": worker.get("worker_verified", False)
+        },
+        "earnings": {
+            "today": round(today_earnings, 2),
+            "this_month": round(month_earnings, 2),
+            "weekly": weekly
+        },
+        "stats": {
+            "jobs_today": len(today_completed),
+            "active_jobs": len(active),
+            "pending_offers": pending_offers,
+            "completed_jobs": len(completed),
+            "rating": avg_rating,
+            "acceptance_rate": 98  # Mock for now
+        },
+        "nearby_jobs": nearby_jobs
+    }
+
+
+@api_router.put("/worker/status/{worker_id}")
+async def update_worker_status(worker_id: str, status: WorkerStatusUpdate):
+    """Toggle worker online/offline status"""
+    await db.worker_profiles.update_one(
+        {"user_id": worker_id},
+        {"$set": {"is_online": status.is_online}},
+        upsert=True
+    )
+    return {"success": True, "is_online": status.is_online}
 
 
 # Include the router in the main app

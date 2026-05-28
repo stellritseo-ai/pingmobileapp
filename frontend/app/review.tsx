@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,15 +8,65 @@ import { Colors } from '@/src/constants/Colors';
 import { fontSize, fontWeight, spacing, borderRadius } from '@/src/constants/theme';
 import { GlassCard } from '@/src/components/ui/GlassCard';
 import { Button } from '@/src/components/ui/Button';
+import { reviewsAPI } from '@/src/services/api';
+import { useAuthStore } from '@/src/store/authStore';
 
 export default function ReviewScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const { jobId, workerId, workerName, amount } = useLocalSearchParams<{
+    jobId?: string;
+    workerId?: string;
+    workerName?: string;
+    amount?: string;
+  }>();
+  
   const [overall, setOverall] = useState(0);
   const [quality, setQuality] = useState(0);
   const [communication, setCommunication] = useState(0);
   const [punctuality, setPunctuality] = useState(0);
   const [review, setReview] = useState('');
   const [recommend, setRecommend] = useState<boolean | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (overall === 0) {
+      Alert.alert('Rating Required', 'Please provide an overall rating');
+      return;
+    }
+    if (recommend === null) {
+      Alert.alert('Recommendation Required', 'Would you recommend this worker?');
+      return;
+    }
+    if (!user?.id || !jobId || !workerId) {
+      // Fall back to demo mode if no params
+      Alert.alert('Thank you!', 'Your review has been submitted', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await reviewsAPI.create(user.id, user.full_name, {
+        job_id: jobId,
+        worker_id: workerId,
+        overall_rating: overall,
+        quality_rating: quality || overall,
+        communication_rating: communication || overall,
+        punctuality_rating: punctuality || overall,
+        review_text: review,
+        recommend,
+      });
+      Alert.alert('Thank you!', 'Your review has been submitted', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to submit review');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const renderStars = (rating: number, setRating: (val: number) => void, size: number = 32) => (
     <View style={styles.starsRow}>
@@ -62,11 +112,11 @@ export default function ReviewScreen() {
                 <Ionicons name="checkmark" size={14} color={Colors.white} />
               </View>
             </View>
-            <Text style={styles.workerName}>John Doe</Text>
+            <Text style={styles.workerName}>{workerName || 'John Doe'}</Text>
             <Text style={styles.workerJob}>Electrician • Job Completed</Text>
             <View style={styles.jobAmount}>
               <Text style={styles.amountLabel}>Total Paid</Text>
-              <Text style={styles.amountValue}>$45.00</Text>
+              <Text style={styles.amountValue}>${amount || '45.00'}</Text>
             </View>
           </GlassCard>
 
@@ -128,11 +178,8 @@ export default function ReviewScreen() {
 
           <Button
             title="Submit Review"
-            onPress={() => {
-              Alert.alert('Thank you!', 'Your review has been submitted', [
-                { text: 'OK', onPress: () => router.back() }
-              ]);
-            }}
+            onPress={handleSubmit}
+            loading={submitting}
             size="large"
             style={styles.submitButton}
             disabled={overall === 0}

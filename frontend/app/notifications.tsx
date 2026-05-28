@@ -1,23 +1,71 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/Colors';
 import { fontSize, fontWeight, spacing, borderRadius } from '@/src/constants/theme';
+import { notificationsAPI } from '@/src/services/api';
+import { useAuthStore } from '@/src/store/authStore';
 
-const NOTIFICATIONS = [
-  { id: '1', type: 'offer', title: 'New offer received', message: 'John Doe offered $45 for your job', time: '2 min ago', icon: 'pricetag', color: Colors.primary, unread: true },
-  { id: '2', type: 'job', title: 'Job accepted', message: 'Your job "Fix sink" has been accepted by Sarah', time: '1 hr ago', icon: 'checkmark-circle', color: Colors.success, unread: true },
-  { id: '3', type: 'payment', title: 'Payment received', message: 'You received $120 from Mike Chen', time: '3 hr ago', icon: 'cash', color: Colors.success, unread: false },
-  { id: '4', type: 'chat', title: 'New message', message: 'Emma: I am on the way!', time: '5 hr ago', icon: 'chatbubble', color: Colors.primary, unread: false },
-  { id: '5', type: 'verification', title: 'Verification approved', message: 'Your worker profile is now verified ✅', time: 'Yesterday', icon: 'shield-checkmark', color: Colors.primary, unread: false },
-  { id: '6', type: 'review', title: 'New review', message: 'Alex rated you 5 stars!', time: '2 days ago', icon: 'star', color: Colors.warning, unread: false },
+const TYPE_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'job', label: 'Jobs' },
+  { id: 'payment', label: 'Payments' },
+  { id: 'chat', label: 'Chat' },
 ];
+
+function timeAgo(dateStr: string) {
+  const date = new Date(dateStr);
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return days === 1 ? 'Yesterday' : `${days} days ago`;
+  return date.toLocaleDateString();
+}
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState('all');
+
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const response = await notificationsAPI.getNotifications(user.id, filter);
+      setNotifications(response.notifications || []);
+    } catch (error) {
+      console.error('Failed to load notifications:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user?.id, filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const onRefresh = () => { setRefreshing(true); load(); };
+
+  const handleMarkAllRead = async () => {
+    if (!user?.id) return;
+    await notificationsAPI.markAllRead(user.id);
+    load();
+  };
+
+  const handleNotificationPress = async (notif: any) => {
+    if (!notif.read) {
+      await notificationsAPI.markAsRead(notif.id);
+      load();
+    }
+  };
 
   return (
     <LinearGradient colors={[Colors.background, Colors.darkForest]} style={styles.container}>
@@ -27,47 +75,65 @@ export default function NotificationsScreen() {
             <Ionicons name="arrow-back" size={24} color={Colors.white} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Notifications</Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={handleMarkAllRead}>
             <Text style={styles.markAll}>Mark all</Text>
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          <View style={styles.filterRow}>
-            <TouchableOpacity style={[styles.filterChip, styles.filterChipActive]}>
-              <Text style={styles.filterTextActive}>All</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.filterChip}>
-              <Text style={styles.filterText}>Jobs</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.filterChip}>
-              <Text style={styles.filterText}>Payments</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.filterChip}>
-              <Text style={styles.filterText}>Chat</Text>
-            </TouchableOpacity>
-          </View>
-
-          {NOTIFICATIONS.map((notif) => (
+        <View style={styles.filterRow}>
+          {TYPE_FILTERS.map((f) => (
             <TouchableOpacity
-              key={notif.id}
-              activeOpacity={0.7}
-              style={[styles.notification, notif.unread && styles.notificationUnread]}
+              key={f.id}
+              style={[styles.filterChip, filter === f.id && styles.filterChipActive]}
+              onPress={() => setFilter(f.id)}
             >
-              <View style={[styles.notifIcon, { backgroundColor: `${notif.color}30` }]}>
-                <Ionicons name={notif.icon as any} size={22} color={notif.color} />
-              </View>
-              <View style={styles.notifContent}>
-                <View style={styles.notifHeader}>
-                  <Text style={styles.notifTitle}>{notif.title}</Text>
-                  {notif.unread && <View style={styles.unreadDot} />}
-                </View>
-                <Text style={styles.notifMessage}>{notif.message}</Text>
-                <Text style={styles.notifTime}>{notif.time}</Text>
-              </View>
+              <Text style={[styles.filterText, filter === f.id && styles.filterTextActive]}>
+                {f.label}
+              </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
+
+        {loading ? (
+          <View style={styles.centerContent}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+          </View>
+        ) : notifications.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="notifications-off-outline" size={80} color={Colors.darkGray} />
+            <Text style={styles.emptyTitle}>No notifications</Text>
+            <Text style={styles.emptySubtitle}>You're all caught up!</Text>
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+            }
+          >
+            {notifications.map((notif) => (
+              <TouchableOpacity
+                key={notif.id}
+                activeOpacity={0.7}
+                style={[styles.notification, !notif.read && styles.notificationUnread]}
+                onPress={() => handleNotificationPress(notif)}
+              >
+                <View style={[styles.notifIcon, { backgroundColor: `${notif.color}30` }]}>
+                  <Ionicons name={notif.icon as any} size={22} color={notif.color} />
+                </View>
+                <View style={styles.notifContent}>
+                  <View style={styles.notifHeader}>
+                    <Text style={styles.notifTitle}>{notif.title}</Text>
+                    {!notif.read && <View style={styles.unreadDot} />}
+                  </View>
+                  <Text style={styles.notifMessage}>{notif.message}</Text>
+                  <Text style={styles.notifTime}>{timeAgo(notif.created_at)}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -177,6 +243,28 @@ const styles = StyleSheet.create({
   },
   notifTime: {
     fontSize: fontSize.xs,
+    color: Colors.gray,
+  },
+  centerContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  emptyTitle: {
+    fontSize: fontSize.xl,
+    fontWeight: fontWeight.bold,
+    color: Colors.white,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  emptySubtitle: {
+    fontSize: fontSize.md,
     color: Colors.gray,
   },
 });

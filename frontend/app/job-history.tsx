@@ -1,26 +1,46 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/Colors';
 import { fontSize, fontWeight, spacing, borderRadius } from '@/src/constants/theme';
 import { GlassCard } from '@/src/components/ui/GlassCard';
+import { historyAPI } from '@/src/services/api';
+import { useAuthStore } from '@/src/store/authStore';
 
-const JOBS_HISTORY = [
-  { id: '1', title: 'Fix kitchen sink', category: 'Plumbing', date: 'Oct 28, 2024', status: 'completed', amount: '$45.00', rating: 5, worker: 'Sarah Wilson' },
-  { id: '2', title: 'Install ceiling fan', category: 'Electrician', date: 'Oct 25, 2024', status: 'completed', amount: '$80.00', rating: 4, worker: 'John Doe' },
-  { id: '3', title: 'Move furniture', category: 'Moving', date: 'Oct 22, 2024', status: 'completed', amount: '$120.00', rating: 5, worker: 'Mike Chen' },
-  { id: '4', title: 'Deep cleaning', category: 'Cleaning', date: 'Oct 20, 2024', status: 'cancelled', amount: '$60.00', rating: 0, worker: 'Emma Davis' },
-  { id: '5', title: 'Electrical repair', category: 'Electrician', date: 'Oct 15, 2024', status: 'completed', amount: '$95.00', rating: 5, worker: 'Alex Kumar' },
-];
+function formatDate(dateStr: string) {
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export default function JobHistoryScreen() {
   const router = useRouter();
+  const { user } = useAuthStore();
   const [filter, setFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [stats, setStats] = useState({ total_jobs: 0, completed_jobs: 0, total_amount: 0, avg_rating: 0 });
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const filtered = JOBS_HISTORY.filter((j) => filter === 'all' || j.status === filter);
+  const load = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const response = await historyAPI.getJobHistory(user.id, filter);
+      setJobs(response.jobs || []);
+      setStats(response.stats || stats);
+    } catch (error) {
+      console.error('Failed to load history:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user?.id, filter]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const onRefresh = () => { setRefreshing(true); load(); };
 
   return (
     <LinearGradient colors={[Colors.background, Colors.darkForest]} style={styles.container}>
@@ -33,95 +53,85 @@ export default function JobHistoryScreen() {
           <View style={{ width: 40 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        >
           {/* Stats Summary */}
           <View style={styles.statsRow}>
             <GlassCard intensity={20} style={styles.statCard}>
-              <Text style={styles.statValue}>27</Text>
+              <Text style={styles.statValue}>{stats.total_jobs}</Text>
               <Text style={styles.statLabel}>Total Jobs</Text>
             </GlassCard>
             <GlassCard intensity={20} style={styles.statCard}>
-              <Text style={styles.statValue}>$1,847</Text>
-              <Text style={styles.statLabel}>Spent</Text>
+              <Text style={styles.statValue}>${stats.total_amount.toFixed(0)}</Text>
+              <Text style={styles.statLabel}>{user?.role === 'individual_worker' ? 'Earned' : 'Spent'}</Text>
             </GlassCard>
             <GlassCard intensity={20} style={styles.statCard}>
-              <Text style={styles.statValue}>4.8</Text>
+              <Text style={styles.statValue}>{stats.avg_rating || '-'}</Text>
               <Text style={styles.statLabel}>Avg Rating</Text>
             </GlassCard>
           </View>
 
           {/* Filters */}
           <View style={styles.filterRow}>
-            <TouchableOpacity
-              style={[styles.filterChip, filter === 'all' && styles.filterChipActive]}
-              onPress={() => setFilter('all')}
-            >
+            <TouchableOpacity style={[styles.filterChip, filter === 'all' && styles.filterChipActive]} onPress={() => setFilter('all')}>
               <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>All</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.filterChip, filter === 'completed' && styles.filterChipActive]}
-              onPress={() => setFilter('completed')}
-            >
+            <TouchableOpacity style={[styles.filterChip, filter === 'completed' && styles.filterChipActive]} onPress={() => setFilter('completed')}>
               <Text style={[styles.filterText, filter === 'completed' && styles.filterTextActive]}>Completed</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.filterChip, filter === 'cancelled' && styles.filterChipActive]}
-              onPress={() => setFilter('cancelled')}
-            >
+            <TouchableOpacity style={[styles.filterChip, filter === 'cancelled' && styles.filterChipActive]} onPress={() => setFilter('cancelled')}>
               <Text style={[styles.filterText, filter === 'cancelled' && styles.filterTextActive]}>Cancelled</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Job Cards */}
-          {filtered.map((job) => (
-            <TouchableOpacity key={job.id} activeOpacity={0.8}>
-              <GlassCard intensity={20} style={styles.jobCard}>
-                <View style={styles.jobHeader}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.jobTitle}>{job.title}</Text>
-                    <Text style={styles.jobCategory}>{job.category}</Text>
-                  </View>
-                  <View style={[
-                    styles.statusBadge,
-                    job.status === 'completed' ? styles.completedBadge : styles.cancelledBadge,
-                  ]}>
-                    <Text style={[
-                      styles.statusText,
-                      { color: job.status === 'completed' ? Colors.success : Colors.error },
-                    ]}>
-                      {job.status === 'completed' ? '✓ Completed' : '✗ Cancelled'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.jobMeta}>
-                  <View style={styles.workerInfo}>
-                    <View style={styles.workerAvatar}>
-                      <Ionicons name="person" size={14} color={Colors.primary} />
+          {loading ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+            </View>
+          ) : jobs.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="briefcase-outline" size={64} color={Colors.darkGray} />
+              <Text style={styles.emptyTitle}>No jobs yet</Text>
+              <Text style={styles.emptySubtitle}>Your job history will appear here</Text>
+            </View>
+          ) : jobs.map((job) => {
+            const rating = job.review?.overall_rating || 0;
+            return (
+              <TouchableOpacity key={job.id} activeOpacity={0.8} onPress={() => router.push(`/job-details?id=${job.id}`)}>
+                <GlassCard intensity={20} style={styles.jobCard}>
+                  <View style={styles.jobHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.jobTitle}>{job.title}</Text>
+                      <Text style={styles.jobCategory}>{job.category}</Text>
                     </View>
-                    <Text style={styles.workerName}>{job.worker}</Text>
-                  </View>
-                  <Text style={styles.jobDate}>{job.date}</Text>
-                </View>
-
-                <View style={styles.jobFooter}>
-                  <Text style={styles.jobAmount}>{job.amount}</Text>
-                  {job.rating > 0 && (
-                    <View style={styles.ratingDisplay}>
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <Ionicons
-                          key={s}
-                          name="star"
-                          size={12}
-                          color={s <= job.rating ? Colors.warning : Colors.darkGray}
-                        />
-                      ))}
+                    <View style={[styles.statusBadge, job.status === 'completed' ? styles.completedBadge : styles.cancelledBadge]}>
+                      <Text style={[styles.statusText, { color: job.status === 'completed' ? Colors.success : Colors.error }]}>
+                        {job.status === 'completed' ? '✓ Completed' : '✗ Cancelled'}
+                      </Text>
                     </View>
-                  )}
-                </View>
-              </GlassCard>
-            </TouchableOpacity>
-          ))}
+                  </View>
+
+                  <View style={styles.jobMeta}>
+                    <Text style={styles.jobDate}>{formatDate(job.created_at)}</Text>
+                  </View>
+
+                  <View style={styles.jobFooter}>
+                    <Text style={styles.jobAmount}>${(job.final_price || job.budget).toFixed(2)}</Text>
+                    {rating > 0 && (
+                      <View style={styles.ratingDisplay}>
+                        {[1,2,3,4,5].map((s) => (
+                          <Ionicons key={s} name="star" size={12} color={s <= rating ? Colors.warning : Colors.darkGray} />
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </GlassCard>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -273,5 +283,24 @@ const styles = StyleSheet.create({
   ratingDisplay: {
     flexDirection: 'row',
     gap: 2,
+  },
+  loadingState: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  emptyState: {
+    paddingVertical: 80,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+    color: Colors.white,
+    marginTop: spacing.md,
+  },
+  emptySubtitle: {
+    fontSize: fontSize.sm,
+    color: Colors.gray,
+    marginTop: 4,
   },
 });
