@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -17,20 +18,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/src/constants/Colors';
 import { fontSize, fontWeight, spacing, borderRadius } from '@/src/constants/theme';
-import { GlassCard } from '@/src/components/ui/GlassCard';
 import { Button } from '@/src/components/ui/Button';
 import { Input } from '@/src/components/ui/Input';
-import { jobsAPI } from '@/src/services/api';
+import { ServicePickerModal } from '@/src/components/ServicePickerModal';
+import { jobsAPI, servicesAPI, ServiceItem } from '@/src/services/api';
 import { useAuthStore } from '@/src/store/authStore';
-
-const CATEGORIES = [
-  { id: 'electrician', label: 'Electrician', icon: 'flash' },
-  { id: 'cleaning', label: 'Cleaning', icon: 'sparkles' },
-  { id: 'delivery', label: 'Delivery', icon: 'bicycle' },
-  { id: 'handyman', label: 'Handyman', icon: 'construct' },
-  { id: 'event_helper', label: 'Event Helper', icon: 'calendar' },
-  { id: 'moving', label: 'Moving', icon: 'car' },
-];
 
 const URGENCY_LEVELS = [
   { id: 'low', label: 'Flexible', color: Colors.success },
@@ -51,6 +43,36 @@ export default function PostJobScreen() {
   const [location, setLocation] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Services state
+  const [allServices, setAllServices] = useState<ServiceItem[]>([]);
+  const [popularServices, setPopularServices] = useState<ServiceItem[]>([]);
+  const [serviceGroups, setServiceGroups] = useState<string[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [pickerVisible, setPickerVisible] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await servicesAPI.getCategories();
+        if (!mounted) return;
+        setAllServices(res.services || []);
+        setPopularServices(res.popular || []);
+        setServiceGroups(res.groups || []);
+      } catch (e) {
+        console.warn('Failed to load services', e);
+      } finally {
+        if (mounted) setServicesLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const selectedService = allServices.find((s) => s.id === category);
+  const isCategoryInPopular = popularServices.some((s) => s.id === category);
 
   const pickImage = async () => {
     if (photos.length >= 3) {
@@ -130,30 +152,81 @@ export default function PostJobScreen() {
             </View>
 
             <Text style={styles.sectionLabel}>Category</Text>
-            <View style={styles.categoriesGrid}>
-              {CATEGORIES.map((cat) => (
+
+            {servicesLoading ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator color={Colors.primary} />
+                <Text style={styles.loadingText}>Loading services...</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.categoriesGrid}>
+                  {popularServices.map((cat) => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      onPress={() => setCategory(cat.id)}
+                      style={[
+                        styles.categoryChip,
+                        category === cat.id && styles.categoryChipActive,
+                      ]}
+                    >
+                      <Ionicons
+                        name={cat.icon as any}
+                        size={20}
+                        color={category === cat.id ? Colors.white : Colors.primary}
+                      />
+                      <Text style={[
+                        styles.categoryChipText,
+                        category === cat.id && styles.categoryChipTextActive,
+                      ]}>
+                        {cat.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Select Box - All Services */}
                 <TouchableOpacity
-                  key={cat.id}
-                  onPress={() => setCategory(cat.id)}
                   style={[
-                    styles.categoryChip,
-                    category === cat.id && styles.categoryChipActive,
+                    styles.selectBox,
+                    selectedService && !isCategoryInPopular && styles.selectBoxActive,
                   ]}
+                  onPress={() => setPickerVisible(true)}
+                  activeOpacity={0.8}
                 >
+                  <View style={styles.selectBoxLeft}>
+                    <View style={styles.selectBoxIcon}>
+                      <Ionicons
+                        name={
+                          selectedService
+                            ? (selectedService.icon as any)
+                            : 'grid'
+                        }
+                        size={18}
+                        color={Colors.primary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.selectBoxLabel}>
+                        {selectedService
+                          ? selectedService.label
+                          : 'Browse all services'}
+                      </Text>
+                      <Text style={styles.selectBoxSub}>
+                        {selectedService
+                          ? selectedService.group
+                          : `${allServices.length} services available`}
+                      </Text>
+                    </View>
+                  </View>
                   <Ionicons
-                    name={cat.icon as any}
+                    name="chevron-down"
                     size={20}
-                    color={category === cat.id ? Colors.white : Colors.primary}
+                    color={Colors.lightGray}
                   />
-                  <Text style={[
-                    styles.categoryChipText,
-                    category === cat.id && styles.categoryChipTextActive,
-                  ]}>
-                    {cat.label}
-                  </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
+              </>
+            )}
 
             <Input
               label="Job Title *"
@@ -250,6 +323,15 @@ export default function PostJobScreen() {
             />
           </ScrollView>
         </KeyboardAvoidingView>
+
+        <ServicePickerModal
+          visible={pickerVisible}
+          services={allServices}
+          groups={serviceGroups}
+          selectedId={category}
+          onClose={() => setPickerVisible(false)}
+          onSelect={(svc) => setCategory(svc.id)}
+        />
       </SafeAreaView>
     </LinearGradient>
   );
@@ -311,6 +393,57 @@ const styles = StyleSheet.create({
   },
   categoryChipTextActive: {
     color: Colors.white,
+  },
+  selectBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    backgroundColor: Colors.secondaryBackground,
+    borderWidth: 1,
+    borderColor: 'rgba(68, 189, 19, 0.2)',
+    marginBottom: spacing.lg,
+  },
+  selectBoxActive: {
+    borderColor: Colors.primary,
+    backgroundColor: 'rgba(68, 189, 19, 0.08)',
+  },
+  selectBoxLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  selectBoxIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(68, 189, 19, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectBoxLabel: {
+    color: Colors.white,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  selectBoxSub: {
+    color: Colors.lightGray,
+    fontSize: fontSize.xs,
+    marginTop: 2,
+  },
+  loadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  loadingText: {
+    color: Colors.lightGray,
+    fontSize: fontSize.sm,
   },
   urgencyContainer: {
     flexDirection: 'row',

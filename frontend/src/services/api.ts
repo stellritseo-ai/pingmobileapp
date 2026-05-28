@@ -194,6 +194,30 @@ export const historyAPI = {
   },
 };
 
+export interface ServiceItem {
+  id: string;
+  label: string;
+  icon: string;
+  group: string;
+  popular?: boolean;
+}
+
+export interface ServicesResponse {
+  success: boolean;
+  services: ServiceItem[];
+  groups: string[];
+  grouped: Record<string, ServiceItem[]>;
+  popular: ServiceItem[];
+  total: number;
+}
+
+export const servicesAPI = {
+  getCategories: async (): Promise<ServicesResponse> => {
+    const response = await api.get('/services/categories');
+    return response.data;
+  },
+};
+
 export const workerDashboardAPI = {
   getDashboard: async (workerId: string) => {
     const response = await api.get(`/worker/dashboard/${workerId}`);

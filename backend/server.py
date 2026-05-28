@@ -251,6 +251,81 @@ def generate_otp() -> str:
     return "123456"
 
 
+# ==================== SERVICE CATEGORIES ====================
+
+PREDEFINED_SERVICES = [
+    # Home Services
+    {"id": "electrician", "label": "Electrician", "icon": "flash", "group": "Home Services", "popular": True},
+    {"id": "plumber", "label": "Plumber", "icon": "water", "group": "Home Services"},
+    {"id": "carpenter", "label": "Carpenter", "icon": "hammer", "group": "Home Services"},
+    {"id": "painter", "label": "Painter", "icon": "color-palette", "group": "Home Services"},
+    {"id": "ac_repair", "label": "AC Repair", "icon": "snow", "group": "Home Services"},
+    {"id": "appliance_repair", "label": "Appliance Repair", "icon": "build", "group": "Home Services"},
+    {"id": "pest_control", "label": "Pest Control", "icon": "bug", "group": "Home Services"},
+    {"id": "gardener", "label": "Gardener", "icon": "leaf", "group": "Home Services"},
+    {"id": "cleaning", "label": "Cleaning", "icon": "sparkles", "group": "Home Services", "popular": True},
+    {"id": "laundry", "label": "Laundry", "icon": "shirt", "group": "Home Services"},
+    {"id": "handyman", "label": "Handyman", "icon": "construct", "group": "Home Services", "popular": True},
+
+    # Personal Care & Wellness
+    {"id": "beautician", "label": "Beautician", "icon": "rose", "group": "Personal Care"},
+    {"id": "hair_stylist", "label": "Hair Stylist", "icon": "cut", "group": "Personal Care"},
+    {"id": "massage", "label": "Massage Therapist", "icon": "body", "group": "Personal Care"},
+    {"id": "trainer", "label": "Personal Trainer", "icon": "barbell", "group": "Personal Care"},
+    {"id": "yoga", "label": "Yoga Instructor", "icon": "leaf-outline", "group": "Personal Care"},
+    {"id": "tutor", "label": "Tutor", "icon": "school", "group": "Personal Care"},
+    {"id": "babysitter", "label": "Babysitter", "icon": "happy", "group": "Personal Care"},
+    {"id": "pet_care", "label": "Pet Care", "icon": "paw", "group": "Personal Care"},
+
+    # Events
+    {"id": "photographer", "label": "Photographer", "icon": "camera", "group": "Events"},
+    {"id": "videographer", "label": "Videographer", "icon": "videocam", "group": "Events"},
+    {"id": "dj", "label": "DJ / Musician", "icon": "musical-notes", "group": "Events"},
+    {"id": "event_helper", "label": "Event Helper", "icon": "calendar", "group": "Events", "popular": True},
+    {"id": "caterer", "label": "Caterer", "icon": "restaurant", "group": "Events"},
+    {"id": "decorator", "label": "Decorator", "icon": "color-wand", "group": "Events"},
+    {"id": "makeup_artist", "label": "Makeup Artist", "icon": "brush", "group": "Events"},
+
+    # Logistics & Transport
+    {"id": "delivery", "label": "Delivery", "icon": "bicycle", "group": "Logistics", "popular": True},
+    {"id": "moving", "label": "Moving", "icon": "car", "group": "Logistics", "popular": True},
+    {"id": "driver", "label": "Driver", "icon": "car-sport", "group": "Logistics"},
+    {"id": "courier", "label": "Courier", "icon": "cube", "group": "Logistics"},
+
+    # Tech & Digital
+    {"id": "web_developer", "label": "Web Developer", "icon": "code-slash", "group": "Tech & Digital"},
+    {"id": "mobile_developer", "label": "Mobile Developer", "icon": "phone-portrait", "group": "Tech & Digital"},
+    {"id": "graphic_designer", "label": "Graphic Designer", "icon": "color-filter", "group": "Tech & Digital"},
+    {"id": "it_support", "label": "IT Support", "icon": "desktop", "group": "Tech & Digital"},
+    {"id": "computer_repair", "label": "Computer Repair", "icon": "laptop", "group": "Tech & Digital"},
+    {"id": "data_entry", "label": "Data Entry", "icon": "document-text", "group": "Tech & Digital"},
+
+    # Business & Professional
+    {"id": "accountant", "label": "Accountant", "icon": "calculator", "group": "Business"},
+    {"id": "lawyer", "label": "Legal Advisor", "icon": "shield-checkmark", "group": "Business"},
+    {"id": "translator", "label": "Translator", "icon": "language", "group": "Business"},
+    {"id": "marketing", "label": "Marketing Consultant", "icon": "megaphone", "group": "Business"},
+    {"id": "content_writer", "label": "Content Writer", "icon": "create", "group": "Business"},
+]
+
+
+@api_router.get("/services/categories")
+async def get_service_categories():
+    """Return all available service categories grouped + popular shortcuts."""
+    grouped = {}
+    for s in PREDEFINED_SERVICES:
+        grouped.setdefault(s["group"], []).append(s)
+
+    return {
+        "success": True,
+        "services": PREDEFINED_SERVICES,
+        "groups": list(grouped.keys()),
+        "grouped": grouped,
+        "popular": [s for s in PREDEFINED_SERVICES if s.get("popular")],
+        "total": len(PREDEFINED_SERVICES),
+    }
+
+
 # ==================== AUTH ROUTES ====================
 
 @api_router.post("/auth/register")
