@@ -38,7 +38,11 @@ export default function NotificationsScreen() {
   const [filter, setFilter] = useState('all');
 
   const load = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
       const response = await notificationsAPI.getNotifications(user.id, filter);
       setNotifications(response.notifications || []);

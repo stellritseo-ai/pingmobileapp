@@ -19,7 +19,11 @@ export default function WorkerDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
       const response = await workerDashboardAPI.getDashboard(user.id);
       setData(response);
