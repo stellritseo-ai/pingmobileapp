@@ -3,6 +3,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
+import { useAuthStore } from "@/src/store/authStore";
 
 // Keep the native splash visible from cold start until icon fonts register.
 // Required because @expo/vector-icons' componentDidMount fallback fires
@@ -12,6 +13,12 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
+  const loadUser = useAuthStore((s) => s.loadUser);
+
+  // Restore persisted user on every cold start (works for deep-linked URLs too)
+  useEffect(() => {
+    loadUser();
+  }, [loadUser]);
 
   useEffect(() => {
     if (loaded || error) {

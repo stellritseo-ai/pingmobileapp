@@ -218,6 +218,79 @@ export const servicesAPI = {
   },
 };
 
+// ==================== CHAT ====================
+
+export interface ChatOtherUser {
+  id: string;
+  name: string;
+  role: string;
+}
+
+export interface Conversation {
+  id: string;
+  participants: string[];
+  last_message: string | null;
+  last_sender_id: string | null;
+  last_message_at: string | null;
+  job_id: string | null;
+  created_at: string;
+  updated_at: string;
+  other_user: ChatOtherUser | null;
+  unread_count: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  text: string;
+  read_by: string[];
+  created_at: string;
+}
+
+export const chatAPI = {
+  listConversations: async (userId: string) => {
+    const r = await api.get(`/conversations?user_id=${userId}`);
+    return r.data as { success: boolean; conversations: Conversation[]; total_unread: number };
+  },
+
+  createOrGet: async (userId: string, otherUserId: string, jobId?: string) => {
+    const r = await api.post(`/conversations?user_id=${userId}`, {
+      other_user_id: otherUserId,
+      job_id: jobId,
+    });
+    return r.data as { success: boolean; conversation: Conversation };
+  },
+
+  getConversation: async (convId: string, userId: string) => {
+    const r = await api.get(`/conversations/${convId}?user_id=${userId}`);
+    return r.data as { success: boolean; conversation: Conversation };
+  },
+
+  getMessages: async (convId: string, userId: string) => {
+    const r = await api.get(`/conversations/${convId}/messages?user_id=${userId}`);
+    return r.data as { success: boolean; messages: ChatMessage[] };
+  },
+
+  sendMessage: async (convId: string, userId: string, text: string) => {
+    const r = await api.post(`/conversations/${convId}/messages?user_id=${userId}`, { text });
+    return r.data as { success: boolean; message: ChatMessage };
+  },
+
+  markRead: async (convId: string, userId: string) => {
+    const r = await api.post(`/conversations/${convId}/read?user_id=${userId}`);
+    return r.data as { success: boolean };
+  },
+};
+
+/** Build the WebSocket URL for a given user. */
+export function buildChatWsUrl(userId: string): string {
+  const base = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+  // Convert http(s) -> ws(s)
+  const wsBase = base.replace(/^http/i, 'ws');
+  return `${wsBase}/api/ws/chat/${userId}`;
+}
+
 export const workerDashboardAPI = {
   getDashboard: async (workerId: string) => {
     const response = await api.get(`/worker/dashboard/${workerId}`);

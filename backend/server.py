@@ -1,12 +1,14 @@
-from fastapi import FastAPI, APIRouter, HTTPException, status
+from fastapi import FastAPI, APIRouter, HTTPException, status, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import json
 import logging
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict, Set
 import uuid
 from datetime import datetime, timedelta
 import random
@@ -1092,8 +1094,259 @@ async def update_worker_status(worker_id: str, status: WorkerStatusUpdate):
     return {"success": True, "is_online": status.is_online}
 
 
+# ==================== CHAT / MESSAGING ====================
+
+class Conversation(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    participants: List[str]  # exactly 2 user_ids
+    last_message: Optional[str] = None
+    last_sender_id: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+    job_id: Optional[str] = None  # optional context (which job this chat is about)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Message(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    conversation_id: str
+    sender_id: str
+    text: str
+    read_by: List[str] = []
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CreateConversationRequest(BaseModel):
+    other_user_id: str
+    job_id: Optional[str] = None
+
+
+class SendMessageRequest(BaseModel):
+    text: str
+
+
+# ---- WebSocket Connection Manager ----
+class ChatConnectionManager:
+    def __init__(self):
+        # Map user_id -> set of WebSocket connections (a user can be on multiple devices)
+        self.active: Dict[str, Set[WebSocket]] = {}
+
+    async def connect(self, user_id: str, ws: WebSocket):
+        await ws.accept()
+        self.active.setdefault(user_id, set()).add(ws)
+
+    def disconnect(self, user_id: str, ws: WebSocket):
+        if user_id in self.active:
+            self.active[user_id].discard(ws)
+            if not self.active[user_id]:
+                self.active.pop(user_id, None)
+
+    async def send_to_user(self, user_id: str, payload: dict):
+        sockets = list(self.active.get(user_id, set()))
+        for ws in sockets:
+            try:
+                await ws.send_text(json.dumps(payload, default=str))
+            except Exception:
+                # If a socket is dead, drop it
+                self.disconnect(user_id, ws)
+
+
+chat_manager = ChatConnectionManager()
+
+
+async def _enrich_conversation(conv: dict, current_user_id: str) -> dict:
+    """Add other_user details + unread_count for the current user."""
+    conv = dict(conv)
+    conv.pop("_id", None)
+    other_id = next((p for p in conv.get("participants", []) if p != current_user_id), None)
+    other_user = None
+    if other_id:
+        u = await db.users.find_one({"id": other_id}, {"_id": 0, "password_hash": 0})
+        if u:
+            other_user = {
+                "id": u["id"],
+                "name": u.get("full_name", "User"),
+                "role": u.get("role", "normal_user"),
+            }
+
+    unread = await db.messages.count_documents({
+        "conversation_id": conv["id"],
+        "sender_id": {"$ne": current_user_id},
+        "read_by": {"$ne": current_user_id},
+    })
+
+    conv["other_user"] = other_user
+    conv["unread_count"] = unread
+    return conv
+
+
+@api_router.post("/conversations")
+async def create_or_get_conversation(req: CreateConversationRequest, user_id: str):
+    """Create a new conversation (or return existing one) between user_id and other_user_id."""
+    if user_id == req.other_user_id:
+        raise HTTPException(status_code=400, detail="Cannot start chat with yourself")
+
+    # Find existing conversation between these two participants (any order)
+    existing = await db.conversations.find_one({
+        "participants": {"$all": [user_id, req.other_user_id], "$size": 2}
+    })
+    if existing:
+        enriched = await _enrich_conversation(existing, user_id)
+        return {"success": True, "conversation": enriched}
+
+    conv = Conversation(participants=[user_id, req.other_user_id], job_id=req.job_id)
+    await db.conversations.insert_one(conv.dict())
+    enriched = await _enrich_conversation(conv.dict(), user_id)
+    return {"success": True, "conversation": enriched}
+
+
+@api_router.get("/conversations")
+async def list_conversations(user_id: str):
+    """Get all conversations for the user, sorted by last_message_at desc."""
+    cursor = db.conversations.find(
+        {"participants": user_id}, {"_id": 0}
+    ).sort("updated_at", -1)
+    conversations = await cursor.to_list(200)
+    enriched = [await _enrich_conversation(c, user_id) for c in conversations]
+    total_unread = sum(c["unread_count"] for c in enriched)
+    return {"success": True, "conversations": enriched, "total_unread": total_unread}
+
+
+@api_router.get("/conversations/{conv_id}")
+async def get_conversation(conv_id: str, user_id: str):
+    conv = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if user_id not in conv["participants"]:
+        raise HTTPException(status_code=403, detail="Not a participant")
+    return {"success": True, "conversation": await _enrich_conversation(conv, user_id)}
+
+
+@api_router.get("/conversations/{conv_id}/messages")
+async def get_messages(conv_id: str, user_id: str, limit: int = 100):
+    conv = await db.conversations.find_one({"id": conv_id})
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if user_id not in conv["participants"]:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
+    messages = await db.messages.find(
+        {"conversation_id": conv_id}, {"_id": 0}
+    ).sort("created_at", 1).to_list(limit)
+    return {"success": True, "messages": messages}
+
+
+@api_router.post("/conversations/{conv_id}/messages")
+async def send_message(conv_id: str, req: SendMessageRequest, user_id: str):
+    conv = await db.conversations.find_one({"id": conv_id})
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if user_id not in conv["participants"]:
+        raise HTTPException(status_code=403, detail="Not a participant")
+    if not req.text or not req.text.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    msg = Message(
+        conversation_id=conv_id,
+        sender_id=user_id,
+        text=req.text.strip(),
+        read_by=[user_id],  # sender has read their own msg
+    )
+    await db.messages.insert_one(msg.dict())
+
+    # Update conversation last_message + timestamp
+    now = datetime.utcnow()
+    await db.conversations.update_one(
+        {"id": conv_id},
+        {"$set": {
+            "last_message": msg.text,
+            "last_sender_id": user_id,
+            "last_message_at": now,
+            "updated_at": now,
+        }}
+    )
+
+    payload = {
+        "type": "new_message",
+        "conversation_id": conv_id,
+        "message": msg.dict(),
+    }
+
+    # Push to all participants via WebSocket
+    for participant_id in conv["participants"]:
+        await chat_manager.send_to_user(participant_id, payload)
+
+    return {"success": True, "message": msg.dict()}
+
+
+@api_router.post("/conversations/{conv_id}/read")
+async def mark_conversation_read(conv_id: str, user_id: str):
+    conv = await db.conversations.find_one({"id": conv_id})
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if user_id not in conv["participants"]:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
+    await db.messages.update_many(
+        {"conversation_id": conv_id, "read_by": {"$ne": user_id}},
+        {"$addToSet": {"read_by": user_id}}
+    )
+
+    # Notify other participant so unread badges update
+    for participant_id in conv["participants"]:
+        if participant_id != user_id:
+            await chat_manager.send_to_user(participant_id, {
+                "type": "conversation_read",
+                "conversation_id": conv_id,
+                "reader_id": user_id,
+            })
+
+    return {"success": True}
+
+
+# Note: WebSocket route is registered on the main `app`, not the api_router, below.
+
+
 # Include the router in the main app
 app.include_router(api_router)
+
+
+# ---- WebSocket endpoint (real-time chat) ----
+@app.websocket("/api/ws/chat/{user_id}")
+async def chat_websocket(websocket: WebSocket, user_id: str):
+    await chat_manager.connect(user_id, websocket)
+    try:
+        # Send a hello so the client knows it's connected
+        await websocket.send_text(json.dumps({"type": "connected", "user_id": user_id}))
+        while True:
+            # We support ping/pong + optional typing indicators
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+
+            event_type = data.get("type")
+            if event_type == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+            elif event_type == "typing":
+                # broadcast to other participants in the conversation
+                conv_id = data.get("conversation_id")
+                if conv_id:
+                    conv = await db.conversations.find_one({"id": conv_id})
+                    if conv and user_id in conv.get("participants", []):
+                        for p in conv["participants"]:
+                            if p != user_id:
+                                await chat_manager.send_to_user(p, {
+                                    "type": "typing",
+                                    "conversation_id": conv_id,
+                                    "user_id": user_id,
+                                    "is_typing": bool(data.get("is_typing", True)),
+                                })
+    except WebSocketDisconnect:
+        chat_manager.disconnect(user_id, websocket)
+    except Exception:
+        chat_manager.disconnect(user_id, websocket)
 
 app.add_middleware(
     CORSMiddleware,
